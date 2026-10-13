@@ -9,6 +9,7 @@ namespace MiniFactory.Economy
         public double Balance { get; private set; }
         public IReadOnlyList<MachineState> Machines { get; }
         public ProductionBoost Boost { get; }
+        private readonly HashSet<string> grantedPurchaseIds = new HashSet<string>(StringComparer.Ordinal);
 
         public double TotalProductionPerSecond
         {
@@ -113,14 +114,28 @@ namespace MiniFactory.Economy
             return true;
         }
 
+        public bool TryGrantPurchase(string transactionId, double coins)
+        {
+            if (string.IsNullOrWhiteSpace(transactionId)) throw new ArgumentException("Transaction ID is required.", nameof(transactionId));
+            RequireNonNegativeFinite(coins, nameof(coins));
+            if (coins == 0) throw new ArgumentOutOfRangeException(nameof(coins));
+            if (grantedPurchaseIds.Contains(transactionId)) return false;
+            if (double.IsInfinity(Balance + coins)) throw new OverflowException("Purchase would exceed the supported balance.");
+            Balance += coins;
+            grantedPurchaseIds.Add(transactionId);
+            return true;
+        }
+
         public FactoryProgress CaptureProgress()
         {
             var progress = new FactoryProgress
             {
                 Balance = Balance,
                 Boost = Boost.Capture(),
+                GrantedPurchaseIds = new string[grantedPurchaseIds.Count],
                 Machines = new MachineProgress[Machines.Count]
             };
+            grantedPurchaseIds.CopyTo(progress.GrantedPurchaseIds);
             for (int i = 0; i < Machines.Count; i++)
                 progress.Machines[i] = new MachineProgress
                 {
@@ -138,6 +153,9 @@ namespace MiniFactory.Economy
                 return false;
 
             var savedLevels = new Dictionary<string, int>(StringComparer.Ordinal);
+            var purchases = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string id in progress.GrantedPurchaseIds ?? Array.Empty<string>())
+                if (string.IsNullOrWhiteSpace(id) || !purchases.Add(id)) return false;
             foreach (MachineProgress machine in progress.Machines)
             {
                 if (machine == null || string.IsNullOrWhiteSpace(machine.Id) || machine.Level < 0 ||
@@ -165,6 +183,8 @@ namespace MiniFactory.Economy
             for (int i = 0; i < Machines.Count; i++)
                 Machines[i].Level = levels[i];
             Boost.Restore(progress.Boost);
+            grantedPurchaseIds.Clear();
+            grantedPurchaseIds.UnionWith(purchases);
             return true;
         }
 

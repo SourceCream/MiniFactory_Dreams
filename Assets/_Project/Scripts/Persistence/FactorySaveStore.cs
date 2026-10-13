@@ -9,7 +9,7 @@ namespace MiniFactory.Persistence
     /// <summary>Versioned local JSON with a previous-save backup. Call TryLoad before playing.</summary>
     public sealed class FactorySaveStore
     {
-        private const int CurrentVersion = 3;
+        private const int CurrentVersion = 4;
         private readonly string directory;
         private readonly Action<string> reportWarning;
         private bool preserveBackup = true;

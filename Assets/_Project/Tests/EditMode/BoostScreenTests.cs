@@ -21,6 +21,7 @@ namespace MiniFactory.Tests
         private GameObject instance;
         private FactoryScreen screen;
         private EconomyConfig config;
+        private BoostConfig boostConfig;
         private BoostView View => instance.GetComponentInChildren<BoostView>(true);
         private Button Button => View.GetComponent<Button>();
         private FactorySaveStore Store => new FactorySaveStore(directory);
@@ -31,6 +32,7 @@ namespace MiniFactory.Tests
             directory = Path.Combine(Path.GetTempPath(), "MiniFactoryBoostTests-" + Guid.NewGuid().ToString("N"));
             now = Start;
             config = AssetDatabase.LoadAssetAtPath<EconomyConfig>("Assets/_Project/Configs/EconomyConfig.asset");
+            boostConfig = AssetDatabase.LoadAssetAtPath<BoostConfig>("Assets/_Project/Configs/BoostConfig.asset");
         }
 
         [TearDown]
@@ -58,7 +60,7 @@ namespace MiniFactory.Tests
             Assert.That(Label(press, "Production Gain").text, Is.EqualTo("+2 /с"));
             Assert.That(Label(Card("assembler"), "Rate").text, Is.EqualTo("0 /с"));
             Assert.That(press.GetComponentInChildren<MachineMotion>().SpeedMultiplier, Is.EqualTo(2));
-            var saved = config.CreateEconomy();
+            var saved = config.CreateEconomy(boostConfig.ToDefinition());
             Assert.That(Store.TryLoad(saved, out long timestamp), Is.True);
             Assert.That(saved.Boost.EndsAtUtcTicks, Is.EqualTo(Start + TimeSpan.FromSeconds(60).Ticks));
             Assert.That(timestamp, Is.EqualTo(now));
@@ -120,7 +122,7 @@ namespace MiniFactory.Tests
         [Test]
         public void DisabledConfig_HidesControlAndDoesNotChangeImportedAsset()
         {
-            var disabled = Object.Instantiate(config);
+            var disabled = Object.Instantiate(boostConfig);
             try
             {
                 var data = new SerializedObject(disabled);
@@ -129,12 +131,12 @@ namespace MiniFactory.Tests
                 CreateScreen(disabled);
                 Assert.That(View.gameObject.activeSelf, Is.False);
                 Assert.That(screen.Session.TryActivateBoost(now), Is.False);
-                Assert.That(config.CreateEconomy().Boost.Definition.Enabled, Is.True);
+                Assert.That(boostConfig.ToDefinition().Enabled, Is.True);
             }
             finally { Object.DestroyImmediate(disabled); }
         }
 
-        private void CreateScreen(EconomyConfig configuration = null)
+        private void CreateScreen(BoostConfig configuration = null)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_Project/Prefabs/UI/FactoryScreen.prefab");
             instance = Object.Instantiate(prefab);
@@ -142,7 +144,7 @@ namespace MiniFactory.Tests
             if (configuration != null)
             {
                 var data = new SerializedObject(screen);
-                data.FindProperty("config").objectReferenceValue = configuration;
+                data.FindProperty("boostConfig").objectReferenceValue = configuration;
                 data.ApplyModifiedPropertiesWithoutUndo();
             }
             screen.Initialize(Store, () => now);

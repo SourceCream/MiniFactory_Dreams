@@ -18,6 +18,7 @@ namespace MiniFactory.Presentation
 
         public void Show(OfflineIncome income)
         {
+            transform.SetAsLastSibling();
             continueButton.onClick.RemoveListener(Dismiss);
             continueButton.onClick.AddListener(Dismiss);
             durationLabel.text = FormatDuration(income.AwaySeconds);
