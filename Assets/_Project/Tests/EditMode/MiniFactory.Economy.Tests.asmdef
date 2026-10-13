@@ -1,7 +1,7 @@
 {
     "name": "MiniFactory.Economy.Tests",
     "rootNamespace": "MiniFactory.Tests",
-    "references": ["MiniFactory.Economy", "MiniFactory.Configuration", "MiniFactory.Presentation", "UnityEngine.UI", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
+    "references": ["MiniFactory.Economy", "MiniFactory.Configuration", "MiniFactory.Persistence", "MiniFactory.Presentation", "UnityEngine.UI", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
     "includePlatforms": ["Editor"],
     "overrideReferences": true,
     "precompiledReferences": ["nunit.framework.dll"],
