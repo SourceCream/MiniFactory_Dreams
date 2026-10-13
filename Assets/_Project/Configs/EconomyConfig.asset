@@ -15,19 +15,19 @@ MonoBehaviour:
   initialBalance: 0
   machines:
   - id: press
-    displayName: Press
+    displayName: Пресс
     unlockCost: 0
     baseProductionPerSecond: 1
     baseUpgradeCost: 10
     upgradeCostMultiplier: 1.5
   - id: assembler
-    displayName: Assembler
+    displayName: Сборщик
     unlockCost: 50
     baseProductionPerSecond: 5
     baseUpgradeCost: 50
     upgradeCostMultiplier: 1.5
   - id: packer
-    displayName: Packer
+    displayName: Упаковщик
     unlockCost: 250
     baseProductionPerSecond: 20
     baseUpgradeCost: 200
