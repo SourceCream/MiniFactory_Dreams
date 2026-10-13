@@ -1,0 +1,6 @@
+{
+    "name": "MiniFactory.Purchasing",
+    "rootNamespace": "MiniFactory.Purchasing",
+    "references": ["MiniFactory.Shop", "Unity.Purchasing"],
+    "autoReferenced": true
+}

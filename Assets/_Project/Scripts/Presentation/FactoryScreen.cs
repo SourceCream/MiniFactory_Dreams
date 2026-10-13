@@ -2,6 +2,8 @@ using System;
 using MiniFactory.Configuration;
 using MiniFactory.Economy;
 using MiniFactory.Persistence;
+using MiniFactory.Purchasing;
+using MiniFactory.Shop;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,15 +12,20 @@ namespace MiniFactory.Presentation
     public sealed class FactoryScreen : MonoBehaviour
     {
         [SerializeField] private EconomyConfig config;
+        [SerializeField] private BoostConfig boostConfig;
+        [SerializeField] private ShopConfig shopConfig;
         [SerializeField] private Text balanceLabel;
         [SerializeField] private Text incomeLabel;
         [SerializeField] private MachineCard[] cards;
         [SerializeField] private OfflineIncomePopup offlinePopup;
         [SerializeField] private BoostView boostView;
+        [SerializeField] private Button shopButton;
+        [SerializeField] private ShopPopup shopPopup;
         [SerializeField, Min(1)] private float autosaveIntervalSeconds = 5;
 
         public FactoryEconomy Session { get; private set; }
         public OfflineIncome LastOfflineIncome { get; private set; }
+        public ShopSession Shop { get; private set; }
         private float refreshTimer;
         private float saveTimer;
         private FactorySaveStore saveStore;
@@ -32,6 +39,7 @@ namespace MiniFactory.Presentation
         {
             if (Session == null)
                 Initialize(new FactorySaveStore(Application.persistentDataPath, message => Debug.LogWarning(message, this)));
+            if (Shop == null) InitializeShop(new UnityIapGateway(shopConfig.UseFakeStore));
         }
 
         // Passing no store keeps editor previews and economy/UI tests independent of player files.
@@ -40,7 +48,7 @@ namespace MiniFactory.Presentation
             if (Session != null) return;
             saveStore = store;
             utcNow = utcClock ?? (() => DateTime.UtcNow.Ticks);
-            Session = config.CreateEconomy();
+            Session = config.CreateEconomy(boostConfig.ToDefinition());
             long savedAt = 0;
             saveStore?.TryLoad(Session, out savedAt);
             offlineTracker = new OfflineIncomeTracker(savedAt);
@@ -51,6 +59,18 @@ namespace MiniFactory.Presentation
             RefreshViews();
             SaveProgress(false);
             ShowOfflineIncome();
+        }
+
+        // Explicit injection keeps editor previews and unit tests away from the live SDK.
+        public void InitializeShop(IStoreGateway gateway)
+        {
+            if (Shop != null) return;
+            Shop = new ShopSession(shopConfig.ToDefinition(), gateway, Session,
+                () => saveStore == null || saveStore.TrySave(Session, offlineTracker.AccountedThroughUtcTicks));
+            Shop.Changed += RefreshViews;
+            shopPopup.Bind(Shop);
+            shopButton.onClick.AddListener(shopPopup.Show);
+            Shop.Initialize();
         }
 
         private void Update()
@@ -164,6 +184,13 @@ namespace MiniFactory.Presentation
         private void OnDestroy()
         {
             SaveProgress();
+            if (Shop != null)
+            {
+                shopButton.onClick.RemoveListener(shopPopup.Show);
+                shopPopup.Unbind();
+                Shop.Changed -= RefreshViews;
+                Shop.Dispose();
+            }
             boostView?.Unbind();
             if (cards == null) return;
             foreach (MachineCard card in cards)

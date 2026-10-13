@@ -1,0 +1,7 @@
+{
+    "name": "MiniFactory.Shop",
+    "rootNamespace": "MiniFactory.Shop",
+    "references": ["MiniFactory.Economy"],
+    "autoReferenced": true,
+    "noEngineReferences": true
+}

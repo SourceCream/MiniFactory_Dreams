@@ -9,6 +9,7 @@ namespace MiniFactory.Economy
         public double Balance = -1;
         public MachineProgress[] Machines;
         public BoostProgress Boost;
+        public string[] GrantedPurchaseIds;
     }
 
     [Serializable]
