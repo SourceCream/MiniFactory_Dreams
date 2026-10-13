@@ -1,5 +1,6 @@
 using MiniFactory.Configuration;
 using MiniFactory.Economy;
+using MiniFactory.Persistence;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,18 +12,29 @@ namespace MiniFactory.Presentation
         [SerializeField] private Text balanceLabel;
         [SerializeField] private Text incomeLabel;
         [SerializeField] private MachineCard[] cards;
+        [SerializeField, Min(1)] private float autosaveIntervalSeconds = 5;
 
         public FactoryEconomy Session { get; private set; }
         private float refreshTimer;
+        private float saveTimer;
+        private FactorySaveStore saveStore;
         private bool paused;
+        private bool unfocused;
         private bool skipNextFrame;
 
-        private void Awake() => Initialize();
+        private void Awake()
+        {
+            if (Session == null)
+                Initialize(new FactorySaveStore(Application.persistentDataPath, message => Debug.LogWarning(message, this)));
+        }
 
-        public void Initialize()
+        // Passing no store keeps editor previews and economy/UI tests independent of player files.
+        public void Initialize(FactorySaveStore store = null)
         {
             if (Session != null) return;
+            saveStore = store;
             Session = config.CreateEconomy();
+            saveStore?.TryLoad(Session);
             foreach (MachineCard card in cards)
                 card.Bind(Session.GetMachine(card.MachineId), BuyOrUpgrade);
             RefreshViews();
@@ -30,7 +42,7 @@ namespace MiniFactory.Presentation
 
         private void Update()
         {
-            if (paused) return;
+            if (paused || unfocused) return;
             if (skipNextFrame)
             {
                 skipNextFrame = false;
@@ -38,6 +50,8 @@ namespace MiniFactory.Presentation
             }
 
             Session.Advance(Time.deltaTime);
+            saveTimer += Time.unscaledDeltaTime;
+            if (saveTimer >= Mathf.Max(1, autosaveIntervalSeconds)) SaveProgress();
             refreshTimer += Time.deltaTime;
             if (refreshTimer < 0.1f) return;
             refreshTimer = 0;
@@ -47,8 +61,24 @@ namespace MiniFactory.Presentation
         private void OnApplicationPause(bool isPaused)
         {
             paused = isPaused;
+            if (isPaused) SaveProgress();
             // Background income belongs to the later save/offline system.
             skipNextFrame = !isPaused;
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            unfocused = !hasFocus;
+            if (!hasFocus) SaveProgress();
+            skipNextFrame = hasFocus;
+        }
+
+        private void OnApplicationQuit() => SaveProgress();
+
+        private void SaveProgress()
+        {
+            if (Session != null) saveStore?.TrySave(Session);
+            saveTimer = 0;
         }
 
         private void BuyOrUpgrade(MachineCard card)
@@ -60,6 +90,7 @@ namespace MiniFactory.Presentation
                 : Session.TryUnlock(card.MachineId);
             if (!succeeded) return;
 
+            SaveProgress();
             RefreshViews();
             card.PlayPurchaseFeedback();
         }
@@ -74,6 +105,7 @@ namespace MiniFactory.Presentation
 
         private void OnDestroy()
         {
+            SaveProgress();
             if (cards == null) return;
             foreach (MachineCard card in cards)
                 if (card != null) card.Unbind();

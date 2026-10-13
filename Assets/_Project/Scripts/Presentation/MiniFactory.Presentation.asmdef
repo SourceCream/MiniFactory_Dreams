@@ -1,6 +1,6 @@
 {
     "name": "MiniFactory.Presentation",
     "rootNamespace": "MiniFactory.Presentation",
-    "references": ["MiniFactory.Economy", "MiniFactory.Configuration", "UnityEngine.UI"],
+    "references": ["MiniFactory.Economy", "MiniFactory.Configuration", "MiniFactory.Persistence", "UnityEngine.UI"],
     "autoReferenced": true
 }

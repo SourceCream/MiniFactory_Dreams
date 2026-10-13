@@ -94,6 +94,57 @@ namespace MiniFactory.Economy
             return true;
         }
 
+        public FactoryProgress CaptureProgress()
+        {
+            var progress = new FactoryProgress
+            {
+                Balance = Balance,
+                Machines = new MachineProgress[Machines.Count]
+            };
+            for (int i = 0; i < Machines.Count; i++)
+                progress.Machines[i] = new MachineProgress
+                {
+                    Id = Machines[i].Definition.Id,
+                    Level = Machines[i].Level
+                };
+            return progress;
+        }
+
+        public bool TryRestoreProgress(FactoryProgress progress)
+        {
+            if (progress == null || progress.Machines == null || progress.Machines.Length == 0 ||
+                double.IsNaN(progress.Balance) || double.IsInfinity(progress.Balance) || progress.Balance < 0)
+                return false;
+
+            var savedLevels = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (MachineProgress machine in progress.Machines)
+            {
+                if (machine == null || string.IsNullOrWhiteSpace(machine.Id) || machine.Level < 0 ||
+                    !savedLevels.TryAdd(machine.Id, machine.Level))
+                    return false;
+            }
+
+            var levels = new int[Machines.Count];
+            double totalProduction = 0;
+            bool hasUnlockedMachine = false;
+            for (int i = 0; i < Machines.Count; i++)
+            {
+                // Stable IDs survive config reordering. New machines use their starting state;
+                // removed machines are ignored. No tuning data is restored from a save.
+                levels[i] = savedLevels.TryGetValue(Machines[i].Definition.Id, out int level)
+                    ? level : (i == 0 ? 1 : 0);
+                hasUnlockedMachine |= levels[i] > 0;
+                totalProduction += Machines[i].Definition.GetProductionPerSecond(levels[i]);
+            }
+            if (!hasUnlockedMachine || double.IsInfinity(totalProduction)) return false;
+
+            // Commit only after validating the whole snapshot, so rejected data changes nothing.
+            Balance = progress.Balance;
+            for (int i = 0; i < Machines.Count; i++)
+                Machines[i].Level = levels[i];
+            return true;
+        }
+
         private void EnsureProductionCanIncrease(double increase)
         {
             if (double.IsInfinity(TotalProductionPerSecond + increase))

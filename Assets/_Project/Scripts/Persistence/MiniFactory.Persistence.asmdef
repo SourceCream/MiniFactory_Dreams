@@ -1,0 +1,6 @@
+{
+    "name": "MiniFactory.Persistence",
+    "rootNamespace": "MiniFactory.Persistence",
+    "references": ["MiniFactory.Economy"],
+    "autoReferenced": true
+}
