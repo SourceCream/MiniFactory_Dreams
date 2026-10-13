@@ -1,4 +1,5 @@
 using System;
+using MiniFactory.Analytics;
 using MiniFactory.Configuration;
 using MiniFactory.Economy;
 using MiniFactory.Persistence;
@@ -29,6 +30,7 @@ namespace MiniFactory.Presentation
         private float refreshTimer;
         private float saveTimer;
         private FactorySaveStore saveStore;
+        private AnalyticsService analytics;
         private OfflineIncomeTracker offlineTracker;
         private Func<long> utcNow;
         private bool paused;
@@ -43,16 +45,22 @@ namespace MiniFactory.Presentation
         }
 
         // Passing no store keeps editor previews and economy/UI tests independent of player files.
-        public void Initialize(FactorySaveStore store = null, Func<long> utcClock = null)
+        public void Initialize(FactorySaveStore store = null, Func<long> utcClock = null,
+            AnalyticsService analyticsService = null)
         {
             if (Session != null) return;
             saveStore = store;
+            analytics = analyticsService ?? new AnalyticsService(new IAnalyticsProvider[] { new DebugAnalyticsProvider() },
+                exception => Debug.LogWarning("Analytics provider failed: " + exception.Message));
             utcNow = utcClock ?? (() => DateTime.UtcNow.Ticks);
             Session = config.CreateEconomy(boostConfig.ToDefinition());
             long savedAt = 0;
-            saveStore?.TryLoad(Session, out savedAt);
+            bool restored = saveStore != null && saveStore.TryLoad(Session, out savedAt);
             offlineTracker = new OfflineIncomeTracker(savedAt);
-            LastOfflineIncome = offlineTracker.Resume(Session, utcNow(), config.MaximumOfflineSeconds);
+            analytics.Track("game_started", ("restored_save", restored), ("balance", Session.Balance),
+                ("machine_count", Session.Machines.Count), ("platform", Application.platform.ToString()),
+                ("app_version", Application.version));
+            ResumeProduction();
             foreach (MachineCard card in cards)
                 card.Bind(Session.GetMachine(card.MachineId), BuyOrUpgrade);
             boostView?.Bind(Session.Boost, ActivateBoost);
@@ -66,7 +74,7 @@ namespace MiniFactory.Presentation
         {
             if (Shop != null) return;
             Shop = new ShopSession(shopConfig.ToDefinition(), gateway, Session,
-                () => saveStore == null || saveStore.TrySave(Session, offlineTracker.AccountedThroughUtcTicks));
+                () => saveStore == null || saveStore.TrySave(Session, offlineTracker.AccountedThroughUtcTicks), analytics);
             Shop.Changed += RefreshViews;
             shopPopup.Bind(Shop);
             shopButton.onClick.AddListener(shopPopup.Show);
@@ -114,7 +122,7 @@ namespace MiniFactory.Presentation
             }
 
             isAway = false;
-            LastOfflineIncome = offlineTracker.Resume(Session, utcNow(), config.MaximumOfflineSeconds);
+            ResumeProduction();
             SaveProgress(false);
             RefreshViews();
             ShowOfflineIncome();
@@ -146,19 +154,47 @@ namespace MiniFactory.Presentation
             SettleActiveProduction();
             MachineState machine = Session.GetMachine(card.MachineId);
             bool wasUnlocked = machine.IsUnlocked;
+            double cost = wasUnlocked ? machine.UpgradeCost : machine.Definition.UnlockCost;
             bool succeeded = wasUnlocked
                 ? Session.TryUpgrade(card.MachineId)
                 : Session.TryUnlock(card.MachineId);
             if (!succeeded) return;
 
             SaveProgress(false);
+            analytics.Track(wasUnlocked ? "machine_upgraded" : "machine_unlocked",
+                ("machine_id", card.MachineId), ("level", machine.Level), ("cost", cost),
+                ("production_per_second", machine.ProductionPerSecond), ("balance", Session.Balance));
             RefreshViews();
             card.PlayPurchaseFeedback(Session.Boost.MultiplierAt(offlineTracker.AccountedThroughUtcTicks));
         }
 
         private void SettleActiveProduction()
         {
-            if (!isAway) offlineTracker.AdvanceActive(Session, utcNow());
+            if (isAway) return;
+            var previousBoost = CurrentBoost;
+            offlineTracker.AdvanceActive(Session, utcNow());
+            TrackFinishedBoost(previousBoost, false);
+        }
+
+        private (long Start, long End, double Multiplier) CurrentBoost =>
+            (Session.Boost.StartedAtUtcTicks, Session.Boost.EndsAtUtcTicks, Session.Boost.ActiveMultiplier);
+
+        private void ResumeProduction()
+        {
+            var previousBoost = CurrentBoost;
+            LastOfflineIncome = offlineTracker.Resume(Session, utcNow(), config.MaximumOfflineSeconds);
+            TrackFinishedBoost(previousBoost, true);
+            if (LastOfflineIncome.CreditedSeconds > 0)
+                analytics.Track("offline_income_applied", ("away_seconds", LastOfflineIncome.AwaySeconds),
+                    ("credited_seconds", LastOfflineIncome.CreditedSeconds), ("coins", LastOfflineIncome.Coins),
+                    ("capped", LastOfflineIncome.IsCapped), ("balance", Session.Balance));
+        }
+
+        private void TrackFinishedBoost((long Start, long End, double Multiplier) previous, bool offline)
+        {
+            if (previous.End == 0 || Session.Boost.EndsAtUtcTicks != 0) return;
+            analytics.Track("boost_finished", ("duration_seconds", (previous.End - previous.Start) / (double)TimeSpan.TicksPerSecond),
+                ("multiplier", previous.Multiplier), ("completed_offline", offline));
         }
 
         private void ActivateBoost()
@@ -167,6 +203,9 @@ namespace MiniFactory.Presentation
             SettleActiveProduction();
             if (!Session.TryActivateBoost(offlineTracker.AccountedThroughUtcTicks)) return;
             SaveProgress(false);
+            analytics.Track("boost_started", ("duration_seconds", Session.Boost.Definition.DurationSeconds),
+                ("multiplier", Session.Boost.ActiveMultiplier),
+                ("ends_at_utc", new DateTime(Session.Boost.EndsAtUtcTicks, DateTimeKind.Utc).ToString("O")));
             RefreshViews();
         }
 
