@@ -8,6 +8,7 @@ namespace MiniFactory.Economy
     {
         public double Balance = -1;
         public MachineProgress[] Machines;
+        public BoostProgress Boost;
     }
 
     [Serializable]
@@ -15,5 +16,14 @@ namespace MiniFactory.Economy
     {
         public string Id;
         public int Level = -1;
+    }
+
+    [Serializable]
+    public sealed class BoostProgress
+    {
+        public long StartedAtUtcTicks;
+        public long EndsAtUtcTicks;
+        // Preserve the terms of the already activated boost across configuration updates.
+        public double Multiplier = 1;
     }
 }

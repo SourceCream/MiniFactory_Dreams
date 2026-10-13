@@ -16,6 +16,7 @@ namespace MiniFactory.Presentation
         [SerializeField] private float cycleSeconds = 2.4f;
 
         public bool Running { get; set; }
+        public float SpeedMultiplier { get; set; } = 1;
         private float phase;
         private Vector2 pistonOrigin;
         private Vector2 coinOrigin;
@@ -34,7 +35,7 @@ namespace MiniFactory.Presentation
                 return;
             }
 
-            phase = Mathf.Repeat(phase + Time.deltaTime / cycleSeconds, 1);
+            phase = Mathf.Repeat(phase + Time.deltaTime * SpeedMultiplier / cycleSeconds, 1);
             if (piston != null)
                 piston.anchoredPosition = pistonOrigin + Vector2.down *
                     (0.5f - 0.5f * Mathf.Cos(phase * Mathf.PI * 2)) * pistonTravel;

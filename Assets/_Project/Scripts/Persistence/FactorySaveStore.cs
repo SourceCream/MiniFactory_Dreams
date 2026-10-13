@@ -9,7 +9,7 @@ namespace MiniFactory.Persistence
     /// <summary>Versioned local JSON with a previous-save backup. Call TryLoad before playing.</summary>
     public sealed class FactorySaveStore
     {
-        private const int CurrentVersion = 2;
+        private const int CurrentVersion = 3;
         private readonly string directory;
         private readonly Action<string> reportWarning;
         private bool preserveBackup = true;
@@ -102,7 +102,7 @@ namespace MiniFactory.Persistence
             {
                 if (!File.Exists(path)) return false;
                 SaveData save = JsonUtility.FromJson<SaveData>(File.ReadAllText(path));
-                if (save != null && (save.Version == 1 || save.Version == CurrentVersion) &&
+                if (save != null && save.Version >= 1 && save.Version <= CurrentVersion &&
                     save.SavedAtUtcTicks >= 0 && save.SavedAtUtcTicks <= DateTime.MaxValue.Ticks &&
                     economy.TryRestoreProgress(save.Progress))
                 {

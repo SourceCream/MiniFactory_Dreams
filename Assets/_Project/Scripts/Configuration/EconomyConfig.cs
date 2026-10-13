@@ -9,6 +9,9 @@ namespace MiniFactory.Configuration
     {
         [SerializeField, Min(0)] private double initialBalance;
         [SerializeField, Min(0)] private double maximumOfflineSeconds = 28800;
+        [SerializeField] private bool boostEnabled = true;
+        [SerializeField, Min(0.1f)] private double boostDurationSeconds = 60;
+        [SerializeField, Min(1.01f)] private double boostMultiplier = 2;
         [Tooltip("The first machine starts unlocked at level 1. All others start locked.")]
         [SerializeField] private MachineConfig[] machines = Array.Empty<MachineConfig>();
 
@@ -27,7 +30,8 @@ namespace MiniFactory.Configuration
                 definitions[i] = machines[i].ToDefinition();
             }
 
-            return new FactoryEconomy(definitions, initialBalance);
+            return new FactoryEconomy(definitions, initialBalance,
+                new BoostDefinition(boostEnabled, boostDurationSeconds, boostMultiplier));
         }
 
         [Serializable]

@@ -8,6 +8,7 @@ namespace MiniFactory.Economy
     {
         public double Balance { get; private set; }
         public IReadOnlyList<MachineState> Machines { get; }
+        public ProductionBoost Boost { get; }
 
         public double TotalProductionPerSecond
         {
@@ -20,7 +21,8 @@ namespace MiniFactory.Economy
             }
         }
 
-        public FactoryEconomy(IReadOnlyList<MachineDefinition> definitions, double initialBalance = 0)
+        public FactoryEconomy(IReadOnlyList<MachineDefinition> definitions, double initialBalance = 0,
+            BoostDefinition boostDefinition = null)
         {
             if (definitions == null)
                 throw new ArgumentNullException(nameof(definitions));
@@ -41,6 +43,7 @@ namespace MiniFactory.Economy
 
             Machines = Array.AsReadOnly(machines);
             Balance = initialBalance;
+            Boost = new ProductionBoost(boostDefinition);
         }
 
         public MachineState GetMachine(string id)
@@ -54,6 +57,7 @@ namespace MiniFactory.Economy
             throw new ArgumentException("Unknown machine ID: " + id, nameof(id));
         }
 
+        /// <summary>Base production for a supplied duration. Use AdvanceBetween for real-time boosted production.</summary>
         public double Advance(double elapsedSeconds)
         {
             RequireNonNegativeFinite(elapsedSeconds, nameof(elapsedSeconds));
@@ -64,6 +68,21 @@ namespace MiniFactory.Economy
 
             Balance = newBalance;
             return earned;
+        }
+
+        public double AdvanceBetween(long fromUtcTicks, long toUtcTicks)
+        {
+            double earned = Advance(Boost.EffectiveProductionSeconds(fromUtcTicks, toUtcTicks));
+            Boost.FinishIfExpired(toUtcTicks);
+            return earned;
+        }
+
+        public double ProductionPerSecondAt(long utcTicks) => TotalProductionPerSecond * Boost.MultiplierAt(utcTicks);
+
+        public bool TryActivateBoost(long utcTicks)
+        {
+            if (double.IsInfinity(TotalProductionPerSecond * Boost.Definition.Multiplier)) return false;
+            return Boost.TryActivate(utcTicks);
         }
 
         public bool TryUnlock(string id)
@@ -99,6 +118,7 @@ namespace MiniFactory.Economy
             var progress = new FactoryProgress
             {
                 Balance = Balance,
+                Boost = Boost.Capture(),
                 Machines = new MachineProgress[Machines.Count]
             };
             for (int i = 0; i < Machines.Count; i++)
@@ -113,7 +133,8 @@ namespace MiniFactory.Economy
         public bool TryRestoreProgress(FactoryProgress progress)
         {
             if (progress == null || progress.Machines == null || progress.Machines.Length == 0 ||
-                double.IsNaN(progress.Balance) || double.IsInfinity(progress.Balance) || progress.Balance < 0)
+                double.IsNaN(progress.Balance) || double.IsInfinity(progress.Balance) || progress.Balance < 0 ||
+                !ProductionBoost.IsValid(progress.Boost))
                 return false;
 
             var savedLevels = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -136,18 +157,20 @@ namespace MiniFactory.Economy
                 hasUnlockedMachine |= levels[i] > 0;
                 totalProduction += Machines[i].Definition.GetProductionPerSecond(levels[i]);
             }
-            if (!hasUnlockedMachine || double.IsInfinity(totalProduction)) return false;
+            double multiplier = Boost.Definition.Enabled && progress.Boost != null ? progress.Boost.Multiplier : 1;
+            if (!hasUnlockedMachine || double.IsInfinity(totalProduction * multiplier)) return false;
 
             // Commit only after validating the whole snapshot, so rejected data changes nothing.
             Balance = progress.Balance;
             for (int i = 0; i < Machines.Count; i++)
                 Machines[i].Level = levels[i];
+            Boost.Restore(progress.Boost);
             return true;
         }
 
         private void EnsureProductionCanIncrease(double increase)
         {
-            if (double.IsInfinity(TotalProductionPerSecond + increase))
+            if (double.IsInfinity((TotalProductionPerSecond + increase) * Boost.ActiveMultiplier))
                 throw new OverflowException("The upgrade would exceed the supported production range.");
         }
 

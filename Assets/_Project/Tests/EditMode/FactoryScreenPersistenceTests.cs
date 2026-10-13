@@ -94,7 +94,7 @@ namespace MiniFactory.Tests
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_Project/Prefabs/UI/FactoryScreen.prefab");
             instance = Object.Instantiate(prefab);
             screen = instance.GetComponent<FactoryScreen>();
-            screen.Initialize(new FactorySaveStore(directory));
+            screen.Initialize(new FactorySaveStore(directory), () => new DateTime(2026, 10, 13).Ticks);
         }
     }
 }

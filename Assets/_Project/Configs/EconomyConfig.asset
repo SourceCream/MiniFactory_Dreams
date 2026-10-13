@@ -14,6 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   initialBalance: 0
   maximumOfflineSeconds: 28800
+  boostEnabled: 1
+  boostDurationSeconds: 60
+  boostMultiplier: 2
   machines:
   - id: press
     displayName: Пресс
