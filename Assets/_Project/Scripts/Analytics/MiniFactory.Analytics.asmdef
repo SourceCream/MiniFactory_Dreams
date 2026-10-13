@@ -1,0 +1,7 @@
+{
+    "name": "MiniFactory.Analytics",
+    "rootNamespace": "MiniFactory.Analytics",
+    "references": [],
+    "autoReferenced": true,
+    "noEngineReferences": true
+}

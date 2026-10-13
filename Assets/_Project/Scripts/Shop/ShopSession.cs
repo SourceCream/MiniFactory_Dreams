@@ -1,4 +1,5 @@
 using System;
+using MiniFactory.Analytics;
 using MiniFactory.Economy;
 
 namespace MiniFactory.Shop
@@ -10,6 +11,7 @@ namespace MiniFactory.Shop
         private readonly IStoreGateway store;
         private readonly FactoryEconomy economy;
         private readonly Func<bool> save;
+        private readonly AnalyticsService analytics;
         private StorePurchase retryPurchase;
         private bool disposed;
         public ShopProductDefinition Product { get; }
@@ -22,12 +24,14 @@ namespace MiniFactory.Shop
         public bool CanBuy => Availability == StoreAvailability.Ready && !IsBusy && !CanRetry;
         public event Action Changed;
 
-        public ShopSession(ShopProductDefinition product, IStoreGateway store, FactoryEconomy economy, Func<bool> save)
+        public ShopSession(ShopProductDefinition product, IStoreGateway store, FactoryEconomy economy, Func<bool> save,
+            AnalyticsService analytics = null)
         {
             Product = product ?? throw new ArgumentNullException(nameof(product));
             this.store = store ?? throw new ArgumentNullException(nameof(store));
             this.economy = economy ?? throw new ArgumentNullException(nameof(economy));
             this.save = save ?? throw new ArgumentNullException(nameof(save));
+            this.analytics = analytics;
             store.AvailabilityChanged += OnAvailabilityChanged;
             store.PurchasePending += Fulfill;
             store.PurchaseFailed += OnFailure;
@@ -63,20 +67,23 @@ namespace MiniFactory.Shop
             if (purchase == null || purchase.ProductId != Product.Id || string.IsNullOrWhiteSpace(purchase.TransactionId))
             {
                 Notice = ShopNotice.Failed;
+                TrackFailure("invalid_order", "fulfillment");
                 Changed?.Invoke();
                 return;
             }
 
             retryPurchase = purchase;
             var before = economy.CaptureProgress();
+            bool granted;
             try
             {
-                economy.TryGrantPurchase(purchase.TransactionId, Product.Coins);
+                granted = economy.TryGrantPurchase(purchase.TransactionId, Product.Coins);
                 // Balance and transaction ID must reach the same durable snapshot before confirming.
                 if (!save())
                 {
                     economy.TryRestoreProgress(before);
                     Notice = ShopNotice.SaveFailed;
+                    TrackFailure("save_failed", "fulfillment", purchase.TransactionId);
                     Changed?.Invoke();
                     return;
                 }
@@ -85,10 +92,15 @@ namespace MiniFactory.Shop
             {
                 economy.TryRestoreProgress(before);
                 Notice = ShopNotice.SaveFailed;
+                TrackFailure("save_failed", "fulfillment", purchase.TransactionId);
                 Changed?.Invoke();
                 return;
             }
 
+            // Replayed orders and confirmation retries must not count as additional revenue.
+            if (granted)
+                analytics?.Track("purchase_succeeded", ("product_id", Product.Id),
+                    ("transaction_id", purchase.TransactionId), ("coins", Product.Coins), ("balance", economy.Balance));
             Notice = ShopNotice.Purchased;
             Changed?.Invoke();
             store.Confirm(purchase.TransactionId);
@@ -97,12 +109,22 @@ namespace MiniFactory.Shop
 
         private void OnAvailabilityChanged()
         {
-            if (Availability == StoreAvailability.Unavailable) IsBusy = false;
+            if (Availability == StoreAvailability.Unavailable)
+            {
+                if (IsBusy) TrackFailure("store_unavailable", "purchase");
+                IsBusy = false;
+            }
             Changed?.Invoke();
         }
 
         private void OnFailure(PurchaseIssue issue)
         {
+            // Deferred is still waiting for payment, not a failed purchase.
+            if (issue != PurchaseIssue.Deferred)
+                TrackFailure(issue == PurchaseIssue.Cancelled ? "cancelled" :
+                    issue == PurchaseIssue.ConfirmationFailed ? "confirmation_failed" : "failed",
+                    issue == PurchaseIssue.ConfirmationFailed ? "confirmation" : "purchase",
+                    issue == PurchaseIssue.ConfirmationFailed ? retryPurchase?.TransactionId : null);
             IsBusy = false;
             Notice = issue switch
             {
@@ -113,6 +135,10 @@ namespace MiniFactory.Shop
             };
             Changed?.Invoke();
         }
+
+        private void TrackFailure(string reason, string stage, string transactionId = null) =>
+            analytics?.Track("purchase_failed", ("product_id", Product.Id), ("reason", reason),
+                ("stage", stage), ("transaction_id", transactionId));
 
         public void Dispose()
         {
