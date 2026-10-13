@@ -9,7 +9,7 @@ namespace MiniFactory.Persistence
     /// <summary>Versioned local JSON with a previous-save backup. Call TryLoad before playing.</summary>
     public sealed class FactorySaveStore
     {
-        private const int CurrentVersion = 1;
+        private const int CurrentVersion = 2;
         private readonly string directory;
         private readonly Action<string> reportWarning;
         private bool preserveBackup = true;
@@ -28,27 +28,36 @@ namespace MiniFactory.Persistence
             FilePath = Path.Combine(directory, "factory-save.json");
         }
 
-        public bool TryLoad(FactoryEconomy economy)
+        public bool TryLoad(FactoryEconomy economy) => TryLoad(economy, out _);
+
+        public bool TryLoad(FactoryEconomy economy, out long savedAtUtcTicks)
         {
             if (economy == null) throw new ArgumentNullException(nameof(economy));
             preserveBackup = true;
-            if (TryRead(FilePath, economy))
+            if (TryRead(FilePath, economy, out savedAtUtcTicks))
             {
                 preserveBackup = false;
                 return true;
             }
-            if (!TryRead(BackupPath, economy)) return false;
+            if (!TryRead(BackupPath, economy, out savedAtUtcTicks)) return false;
 
             reportWarning?.Invoke("Factory progress was recovered from the previous save.");
             return true;
         }
 
-        public bool TrySave(FactoryEconomy economy)
+        public bool TrySave(FactoryEconomy economy, long savedAtUtcTicks = 0)
         {
             if (economy == null) throw new ArgumentNullException(nameof(economy));
+            if (savedAtUtcTicks < 0 || savedAtUtcTicks > DateTime.MaxValue.Ticks)
+                throw new ArgumentOutOfRangeException(nameof(savedAtUtcTicks));
             try
             {
-                var save = new SaveData { Version = CurrentVersion, Progress = economy.CaptureProgress() };
+                var save = new SaveData
+                {
+                    Version = CurrentVersion,
+                    Progress = economy.CaptureProgress(),
+                    SavedAtUtcTicks = savedAtUtcTicks
+                };
                 string json = JsonUtility.ToJson(save, true);
                 Directory.CreateDirectory(directory);
                 using (var stream = new FileStream(TemporaryPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -86,14 +95,21 @@ namespace MiniFactory.Persistence
             }
         }
 
-        private bool TryRead(string path, FactoryEconomy economy)
+        private bool TryRead(string path, FactoryEconomy economy, out long savedAtUtcTicks)
         {
+            savedAtUtcTicks = 0;
             try
             {
                 if (!File.Exists(path)) return false;
                 SaveData save = JsonUtility.FromJson<SaveData>(File.ReadAllText(path));
-                if (save != null && save.Version == CurrentVersion && economy.TryRestoreProgress(save.Progress))
+                if (save != null && (save.Version == 1 || save.Version == CurrentVersion) &&
+                    save.SavedAtUtcTicks >= 0 && save.SavedAtUtcTicks <= DateTime.MaxValue.Ticks &&
+                    economy.TryRestoreProgress(save.Progress))
+                {
+                    // Old saves keep player progress but have no reliable offline time to award.
+                    savedAtUtcTicks = save.Version == 1 ? 0 : save.SavedAtUtcTicks;
                     return true;
+                }
                 reportWarning?.Invoke("Ignored invalid or unsupported factory save: " + path);
             }
             catch (Exception exception) when (IsFileError(exception) || exception is ArgumentException)
@@ -112,6 +128,7 @@ namespace MiniFactory.Persistence
         {
             public int Version;
             public FactoryProgress Progress;
+            public long SavedAtUtcTicks;
         }
     }
 }
