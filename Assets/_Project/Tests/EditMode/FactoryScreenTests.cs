@@ -19,7 +19,7 @@ namespace MiniFactory.Tests
             Assert.That(prefab, Is.Not.Null, "The playable factory prefab must be committed with the scripts.");
             instance = Object.Instantiate(prefab);
             screen = instance.GetComponent<FactoryScreen>();
-            screen.Initialize();
+            screen.Initialize(utcClock: () => new System.DateTime(2026, 10, 13).Ticks);
         }
 
         [TearDown]
@@ -39,7 +39,8 @@ namespace MiniFactory.Tests
             Assert.That(Label(Card("assembler"), "Rate").text, Is.EqualTo("0 /с"));
             Assert.That(Label(Card("assembler"), "Production Gain").text, Is.EqualTo("+5 /с"));
             Assert.That(Label(Card("packer"), "Rate").text, Is.EqualTo("0 /с"));
-            Assert.That(instance.GetComponentsInChildren<Button>().All(button => !button.interactable), Is.True);
+            Assert.That(instance.GetComponentsInChildren<MachineCard>()
+                .All(card => !card.GetComponentInChildren<Button>().interactable), Is.True);
         }
 
         [Test]

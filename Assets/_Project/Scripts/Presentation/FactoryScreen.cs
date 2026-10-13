@@ -14,6 +14,7 @@ namespace MiniFactory.Presentation
         [SerializeField] private Text incomeLabel;
         [SerializeField] private MachineCard[] cards;
         [SerializeField] private OfflineIncomePopup offlinePopup;
+        [SerializeField] private BoostView boostView;
         [SerializeField, Min(1)] private float autosaveIntervalSeconds = 5;
 
         public FactoryEconomy Session { get; private set; }
@@ -26,7 +27,6 @@ namespace MiniFactory.Presentation
         private bool paused;
         private bool unfocused;
         private bool isAway;
-        private bool skipNextFrame;
 
         private void Awake()
         {
@@ -47,6 +47,7 @@ namespace MiniFactory.Presentation
             LastOfflineIncome = offlineTracker.Resume(Session, utcNow(), config.MaximumOfflineSeconds);
             foreach (MachineCard card in cards)
                 card.Bind(Session.GetMachine(card.MachineId), BuyOrUpgrade);
+            boostView?.Bind(Session.Boost, ActivateBoost);
             RefreshViews();
             SaveProgress(false);
             ShowOfflineIncome();
@@ -55,15 +56,11 @@ namespace MiniFactory.Presentation
         private void Update()
         {
             if (isAway) return;
-            if (skipNextFrame)
-            {
-                skipNextFrame = false;
-                return;
-            }
-
-            Session.Advance(Time.deltaTime);
+            bool hadBoost = Session.Boost.EndsAtUtcTicks != 0;
+            SettleActiveProduction();
             saveTimer += Time.unscaledDeltaTime;
-            if (saveTimer >= Mathf.Max(1, autosaveIntervalSeconds)) SaveProgress();
+            if ((hadBoost && Session.Boost.EndsAtUtcTicks == 0) || saveTimer >= Mathf.Max(1, autosaveIntervalSeconds))
+                SaveProgress(false);
             refreshTimer += Time.deltaTime;
             if (refreshTimer < 0.1f) return;
             refreshTimer = 0;
@@ -88,20 +85,19 @@ namespace MiniFactory.Presentation
             bool nowAway = paused || unfocused;
             if (nowAway == isAway) return;
 
-            isAway = nowAway;
-            if (isAway)
+            if (nowAway)
             {
-                offlineTracker.MarkActive(utcNow());
+                SettleActiveProduction();
+                isAway = true;
                 SaveProgress(false);
                 return;
             }
 
+            isAway = false;
             LastOfflineIncome = offlineTracker.Resume(Session, utcNow(), config.MaximumOfflineSeconds);
             SaveProgress(false);
             RefreshViews();
             ShowOfflineIncome();
-            // The first resumed frame may contain background time already credited above.
-            skipNextFrame = true;
         }
 
         private void ShowOfflineIncome()
@@ -118,7 +114,7 @@ namespace MiniFactory.Presentation
             if (Session != null && offlineTracker != null)
             {
                 // Quit/destroy can arrive long after pause. Keep the departure time in that case.
-                if (updateActiveTime && !isAway) offlineTracker.MarkActive(utcNow());
+                if (updateActiveTime) SettleActiveProduction();
                 saveStore?.TrySave(Session, offlineTracker.AccountedThroughUtcTicks);
             }
             saveTimer = 0;
@@ -126,6 +122,8 @@ namespace MiniFactory.Presentation
 
         private void BuyOrUpgrade(MachineCard card)
         {
+            if (isAway) return;
+            SettleActiveProduction();
             MachineState machine = Session.GetMachine(card.MachineId);
             bool wasUnlocked = machine.IsUnlocked;
             bool succeeded = wasUnlocked
@@ -133,22 +131,40 @@ namespace MiniFactory.Presentation
                 : Session.TryUnlock(card.MachineId);
             if (!succeeded) return;
 
-            SaveProgress();
+            SaveProgress(false);
             RefreshViews();
-            card.PlayPurchaseFeedback();
+            card.PlayPurchaseFeedback(Session.Boost.MultiplierAt(offlineTracker.AccountedThroughUtcTicks));
+        }
+
+        private void SettleActiveProduction()
+        {
+            if (!isAway) offlineTracker.AdvanceActive(Session, utcNow());
+        }
+
+        private void ActivateBoost()
+        {
+            if (isAway) return;
+            SettleActiveProduction();
+            if (!Session.TryActivateBoost(offlineTracker.AccountedThroughUtcTicks)) return;
+            SaveProgress(false);
+            RefreshViews();
         }
 
         public void RefreshViews()
         {
             balanceLabel.text = EconomyDisplay.Coins(Session.Balance);
-            incomeLabel.text = "+" + EconomyDisplay.Rate(Session.TotalProductionPerSecond) + " /с";
+            long displayTime = Math.Max(utcNow(), offlineTracker.AccountedThroughUtcTicks);
+            double multiplier = Session.Boost.MultiplierAt(displayTime);
+            incomeLabel.text = "+" + EconomyDisplay.Rate(Session.ProductionPerSecondAt(displayTime)) + " /с";
             foreach (MachineCard card in cards)
-                card.Refresh(Session.Balance);
+                card.Refresh(Session.Balance, multiplier);
+            boostView?.Refresh(displayTime);
         }
 
         private void OnDestroy()
         {
             SaveProgress();
+            boostView?.Unbind();
             if (cards == null) return;
             foreach (MachineCard card in cards)
                 if (card != null) card.Unbind();

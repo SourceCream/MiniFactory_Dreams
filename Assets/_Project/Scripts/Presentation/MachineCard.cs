@@ -47,27 +47,28 @@ namespace MiniFactory.Presentation
 
         private void HandleAction() => onAction?.Invoke(this);
 
-        public void Refresh(double balance)
+        public void Refresh(double balance, double productionMultiplier = 1)
         {
             bool running = machine.IsUnlocked;
             double cost = running ? machine.UpgradeCost : machine.Definition.UnlockCost;
             bool canBuy = balance >= cost && (!running || machine.Level < int.MaxValue);
-            rateLabel.text = (running ? "+" : string.Empty) + EconomyDisplay.Rate(machine.ProductionPerSecond) + " /с";
+            rateLabel.text = (running ? "+" : string.Empty) + EconomyDisplay.Rate(machine.ProductionPerSecond * productionMultiplier) + " /с";
             levelLabel.text = running ? "Ур. " + machine.Level : string.Empty;
             actionLabel.text = running ? "Улучшить" : "Купить";
             costLabel.text = EconomyDisplay.Cost(cost);
-            productionGainLabel.text = "+" + EconomyDisplay.Rate(machine.Definition.BaseProductionPerSecond) + " /с";
+            productionGainLabel.text = "+" + EconomyDisplay.Rate(machine.Definition.BaseProductionPerSecond * productionMultiplier) + " /с";
             lockedShade.enabled = !running;
             var colors = actionButton.colors;
             colors.disabledColor = running ? unavailableColor : lockedUnavailableColor;
             if (actionButton.colors != colors) actionButton.colors = colors;
             actionButton.interactable = canBuy;
             motion.Running = running;
+            motion.SpeedMultiplier = (float)Math.Min(productionMultiplier, 10);
         }
 
-        public void PlayPurchaseFeedback()
+        public void PlayPurchaseFeedback(double productionMultiplier = 1)
         {
-            feedbackLabel.text = "+" + EconomyDisplay.Rate(machine.Definition.BaseProductionPerSecond) + " /с";
+            feedbackLabel.text = "+" + EconomyDisplay.Rate(machine.Definition.BaseProductionPerSecond * productionMultiplier) + " /с";
             feedbackTime = 1.6f;
         }
 

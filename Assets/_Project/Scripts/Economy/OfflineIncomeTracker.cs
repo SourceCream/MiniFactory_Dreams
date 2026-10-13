@@ -30,10 +30,25 @@ namespace MiniFactory.Economy
             double away = AccountedThroughUtcTicks == 0 ? 0 :
                 Math.Max(0, (utcTicks - AccountedThroughUtcTicks) / (double)TimeSpan.TicksPerSecond);
             double credited = Math.Min(away, maximumSeconds);
-            double coins = economy.Advance(credited);
+            long creditedTicks = Math.Min(Math.Max(0, utcTicks - AccountedThroughUtcTicks),
+                (long)Math.Min(credited * TimeSpan.TicksPerSecond, DateTime.MaxValue.Ticks));
+            double coins = AccountedThroughUtcTicks == 0 || utcTicks < AccountedThroughUtcTicks ? 0 :
+                economy.AdvanceBetween(AccountedThroughUtcTicks, AccountedThroughUtcTicks + creditedTicks);
             // Consume the entire absence, including time beyond the cap, exactly once.
             MarkActive(utcTicks);
+            economy.Boost.FinishIfExpired(AccountedThroughUtcTicks);
             return new OfflineIncome(away, credited, coins);
+        }
+
+        public double AdvanceActive(FactoryEconomy economy, long utcTicks)
+        {
+            if (economy == null) throw new ArgumentNullException(nameof(economy));
+            ValidateTime(utcTicks);
+            double earned = AccountedThroughUtcTicks == 0 || utcTicks < AccountedThroughUtcTicks ? 0 :
+                economy.AdvanceBetween(AccountedThroughUtcTicks, utcTicks);
+            MarkActive(utcTicks);
+            economy.Boost.FinishIfExpired(AccountedThroughUtcTicks);
+            return earned;
         }
 
         private static void ValidateTime(long utcTicks)
