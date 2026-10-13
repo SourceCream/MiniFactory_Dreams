@@ -8,8 +8,11 @@ namespace MiniFactory.Configuration
     public sealed class EconomyConfig : ScriptableObject
     {
         [SerializeField, Min(0)] private double initialBalance;
+        [SerializeField, Min(0)] private double maximumOfflineSeconds = 28800;
         [Tooltip("The first machine starts unlocked at level 1. All others start locked.")]
         [SerializeField] private MachineConfig[] machines = Array.Empty<MachineConfig>();
+
+        public double MaximumOfflineSeconds => maximumOfflineSeconds;
 
         public FactoryEconomy CreateEconomy()
         {

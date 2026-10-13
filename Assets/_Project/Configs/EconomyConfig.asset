@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: EconomyConfig
   m_EditorClassIdentifier:
   initialBalance: 0
+  maximumOfflineSeconds: 28800
   machines:
   - id: press
     displayName: Пресс

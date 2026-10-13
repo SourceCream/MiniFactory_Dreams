@@ -61,7 +61,7 @@ namespace MiniFactory.Tests
         [TestCase("{\"Version\":1,\"Progress\":{\"Balance\":-5,\"Machines\":[{\"Id\":\"press\",\"Level\":1}]}}")]
         [TestCase("{\"Version\":1,\"Progress\":{\"Machines\":[{\"Id\":\"press\",\"Level\":1}]}}")]
         [TestCase("{\"Version\":1,\"Progress\":{\"Balance\":5,\"Machines\":[{\"Id\":\"press\"}]}}")]
-        [TestCase("{\"Version\":2,\"Progress\":{\"Balance\":5,\"Machines\":[{\"Id\":\"press\",\"Level\":1}]}}")]
+        [TestCase("{\"Version\":99,\"Progress\":{\"Balance\":5,\"Machines\":[{\"Id\":\"press\",\"Level\":1}]}}")]
         public void InvalidSave_LeavesStartingProgressUntouched(string contents)
         {
             Directory.CreateDirectory(directory);
